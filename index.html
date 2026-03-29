@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>个人留言板 - NFC 直达</title>
+    <title>个人留言板 - 可删除</title>
     <style>
         * {
             box-sizing: border-box;
@@ -22,7 +22,6 @@
             padding: 24px;
             margin-bottom: 24px;
             box-shadow: 0 8px 20px rgba(0,0,0,0.05);
-            transition: all 0.2s;
         }
         h1 {
             font-size: 1.8rem;
@@ -59,7 +58,6 @@
             border-radius: 24px;
             font-size: 1rem;
             font-family: inherit;
-            transition: 0.2s;
         }
         input:focus, textarea:focus {
             outline: none;
@@ -88,6 +86,7 @@
             padding: 16px;
             margin-bottom: 16px;
             border: 1px solid #e2e8f0;
+            position: relative;
         }
         .msg-name {
             font-weight: 700;
@@ -107,6 +106,34 @@
             margin-top: 12px;
             word-break: break-word;
             line-height: 1.45;
+        }
+        .delete-btn {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            background: #fee2e2;
+            color: #dc2626;
+            border: none;
+            border-radius: 30px;
+            padding: 4px 12px;
+            font-size: 0.7rem;
+            cursor: pointer;
+            font-weight: 600;
+            width: auto;
+        }
+        .delete-btn:hover {
+            background: #fecaca;
+            transform: none;
+        }
+        .admin-panel {
+            margin-top: 16px;
+            text-align: right;
+        }
+        .admin-btn {
+            background: #64748b;
+            width: auto;
+            padding: 6px 16px;
+            font-size: 0.8rem;
         }
         .loading {
             text-align: center;
@@ -148,59 +175,94 @@
     <div id="messageList">
         <div class="loading">加载中...</div>
     </div>
+    <div class="admin-panel">
+        <button id="adminBtn" class="admin-btn">🔐 管理删除</button>
+    </div>
 </div>
 <div class="footer">
-    通过 NFC 触碰打开 · 匿名留言板
+    通过 NFC 触碰打开 · 留言板
 </div>
 
 <script>
-    // ---------- 在这里填入你的 Supabase 配置 ----------
-    const SUPABASE_URL = 'https://zcwilyfeqtrdrtzfccmf.supabase.co';      // 替换成你的 URL
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpjd2lseWZlcXRyZHJ0emZjY21mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NzAxMDQsImV4cCI6MjA5MDM0NjEwNH0.3twXeheoP6xuJZR19T7WXGVogfhmPay9LehhytGrVZc';         // 替换成你的 Key
-    // ------------------------------------------------
+    // ========== 请修改这三项 ==========
+    const SUPABASE_URL = 'https://zcwilyfeqtrdrtzfccmf.supabase.co';      // 
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpjd2lseWZlcXRyZHJ0emZjY21mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NzAxMDQsImV4cCI6MjA5MDM0NjEwNH0.3twXeheoP6xuJZR19T7WXGVogfhmPay9LehhytGrVZc';         // 
+    const ADMIN_PASSWORD = 'jtaime';  // 
+    // =================================
 
-    const supabaseClient = {
-        url: SUPABASE_URL,
-        key: SUPABASE_ANON_KEY,
-        async request(path, options = {}) {
-            const headers = {
-                'Content-Type': 'application/json',
-                'apikey': this.key,
-                'Authorization': `Bearer ${this.key}`,
-                ...options.headers
-            };
-            const res = await fetch(`${this.url}/rest/v1/${path}`, {
-                ...options,
-                headers
-            });
-            if (!res.ok) throw new Error(await res.text());
-            return res.json();
+    let adminMode = false;  // 是否处于管理员模式（显示删除按钮）
+
+    // 封装的请求函数（兼容空响应）
+    async function supabaseRequest(path, options = {}) {
+        const headers = {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        };
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+            ...options,
+            headers
+        });
+        if (!res.ok) {
+            const errorText = await res.text();
+            throw new Error(`HTTP ${res.status}: ${errorText.substring(0, 100)}`);
         }
-    };
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            return await res.json();
+        } else {
+            return {}; // 204 No Content 等空响应
+        }
+    }
 
     // 获取留言列表
     async function loadMessages() {
         const container = document.getElementById('messageList');
         container.innerHTML = '<div class="loading">加载中...</div>';
         try {
-            const data = await supabaseClient.request('messages?order=created_at.desc&limit=50');
+            const data = await supabaseRequest('messages?order=created_at.desc&limit=50');
             if (data.length === 0) {
                 container.innerHTML = '<div style="text-align:center;color:#94a3b8;">✨ 还没有留言，抢个沙发吧～</div>';
                 return;
             }
             const html = data.map(msg => `
-                <div class="message-item">
+                <div class="message-item" data-id="${msg.id}">
                     <div>
                         <span class="msg-name">${escapeHtml(msg.name || '匿名')}</span>
                         <span class="msg-time">${formatDate(msg.created_at)}</span>
                     </div>
                     <div class="msg-content">${escapeHtml(msg.content)}</div>
+                    ${adminMode ? `<button class="delete-btn" data-id="${msg.id}">🗑️ 删除</button>` : ''}
                 </div>
             `).join('');
             container.innerHTML = html;
+
+            // 如果处于管理员模式，给所有删除按钮绑定事件
+            if (adminMode) {
+                document.querySelectorAll('.delete-btn').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        const id = btn.getAttribute('data-id');
+                        if (confirm('确定要删除这条留言吗？')) {
+                            await deleteMessage(id);
+                            await loadMessages(); // 刷新列表
+                        }
+                    });
+                });
+            }
         } catch (err) {
             console.error(err);
             container.innerHTML = '<div style="color:#dc2626;">加载失败，请稍后重试</div>';
+        }
+    }
+
+    // 删除留言
+    async function deleteMessage(id) {
+        try {
+            await supabaseRequest(`messages?id=eq.${id}`, { method: 'DELETE' });
+            alert('删除成功 ✅');
+        } catch (err) {
+            alert('删除失败：' + err.message);
         }
     }
 
@@ -209,7 +271,7 @@
         if (!name.trim()) throw new Error('请输入昵称');
         if (!content.trim()) throw new Error('请输入留言内容');
         const payload = { name: name.trim(), content: content.trim() };
-        await supabaseClient.request('messages', {
+        await supabaseRequest('messages', {
             method: 'POST',
             body: JSON.stringify(payload)
         });
@@ -223,8 +285,6 @@
             if (m === '<') return '&lt;';
             if (m === '>') return '&gt;';
             return m;
-        }).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(c) {
-            return c;
         });
     }
 
@@ -234,7 +294,36 @@
         return `${date.getMonth()+1}/${date.getDate()} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}`;
     }
 
-    // 提交按钮事件
+    // 管理员模式开关
+    function enableAdminMode() {
+        adminMode = true;
+        loadMessages(); // 重新渲染，显示删除按钮
+        document.getElementById('adminBtn').textContent = '🔓 退出管理';
+        document.getElementById('adminBtn').style.background = '#dc2626';
+    }
+
+    function disableAdminMode() {
+        adminMode = false;
+        loadMessages(); // 重新渲染，隐藏删除按钮
+        document.getElementById('adminBtn').textContent = '🔐 管理删除';
+        document.getElementById('adminBtn').style.background = '#64748b';
+    }
+
+    // 点击管理按钮
+    document.getElementById('adminBtn').addEventListener('click', () => {
+        if (adminMode) {
+            disableAdminMode();
+        } else {
+            const pwd = prompt('请输入管理密码：');
+            if (pwd === ADMIN_PASSWORD) {
+                enableAdminMode();
+            } else if (pwd !== null) {
+                alert('密码错误');
+            }
+        }
+    });
+
+    // 发布按钮
     document.getElementById('submitBtn').addEventListener('click', async () => {
         const nameInput = document.getElementById('name');
         const contentInput = document.getElementById('content');
@@ -256,7 +345,7 @@
         }
     });
 
-    // 页面加载时获取留言
+    // 初始加载
     loadMessages();
 </script>
 </body>
