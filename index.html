@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>个人留言板 - NFC 直达</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f7fb;
+            color: #1e293b;
+        }
+        .card {
+            background: white;
+            border-radius: 28px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.05);
+            transition: all 0.2s;
+        }
+        h1 {
+            font-size: 1.8rem;
+            margin: 0 0 8px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        h1 small {
+            font-size: 0.8rem;
+            background: #eef2ff;
+            padding: 4px 10px;
+            border-radius: 40px;
+            color: #4f46e5;
+        }
+        .sub {
+            color: #475569;
+            margin-bottom: 24px;
+            border-left: 4px solid #4f46e5;
+            padding-left: 14px;
+        }
+        .form-group {
+            margin-bottom: 18px;
+        }
+        label {
+            font-weight: 600;
+            display: block;
+            margin-bottom: 6px;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid #cbd5e1;
+            border-radius: 24px;
+            font-size: 1rem;
+            font-family: inherit;
+            transition: 0.2s;
+        }
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 3px rgba(79,70,229,0.2);
+        }
+        button {
+            background: #4f46e5;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 40px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: 0.2s;
+            width: 100%;
+        }
+        button:hover {
+            background: #4338ca;
+            transform: scale(0.98);
+        }
+        .message-item {
+            background: #f8fafc;
+            border-radius: 24px;
+            padding: 16px;
+            margin-bottom: 16px;
+            border: 1px solid #e2e8f0;
+        }
+        .msg-name {
+            font-weight: 700;
+            color: #4f46e5;
+            display: inline-block;
+            background: #eef2ff;
+            padding: 4px 12px;
+            border-radius: 30px;
+            font-size: 0.85rem;
+        }
+        .msg-time {
+            font-size: 0.7rem;
+            color: #64748b;
+            margin-left: 12px;
+        }
+        .msg-content {
+            margin-top: 12px;
+            word-break: break-word;
+            line-height: 1.45;
+        }
+        .loading {
+            text-align: center;
+            padding: 30px;
+            color: #64748b;
+        }
+        .footer {
+            text-align: center;
+            font-size: 0.75rem;
+            color: #94a3b8;
+            margin-top: 30px;
+        }
+        hr {
+            margin: 20px 0;
+            border: none;
+            height: 1px;
+            background: #e2e8f0;
+        }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h1>📝 留言板 <small>NFC 直达</small></h1>
+    <div class="sub">留下你想说的话 · 所有人可见</div>
+
+    <div class="form-group">
+        <label>昵称</label>
+        <input type="text" id="name" placeholder="例如：小N" maxlength="30">
+    </div>
+    <div class="form-group">
+        <label>留言内容</label>
+        <textarea id="content" rows="3" placeholder="写下你的想法…" maxlength="500"></textarea>
+    </div>
+    <button id="submitBtn">✍️ 发布留言</button>
+</div>
+
+<div class="card">
+    <h2 style="font-size:1.3rem;">💬 大家的留言</h2>
+    <div id="messageList">
+        <div class="loading">加载中...</div>
+    </div>
+</div>
+<div class="footer">
+    通过 NFC 触碰打开 · 匿名留言板
+</div>
+
+<script>
+    // ---------- 在这里填入你的 Supabase 配置 ----------
+    const SUPABASE_URL = 'https://zcwilyfeqtrdrtzfccmf.supabase.co';      // 替换成你的 URL
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpjd2lseWZlcXRyZHJ0emZjY21mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NzAxMDQsImV4cCI6MjA5MDM0NjEwNH0.3twXeheoP6xuJZR19T7WXGVogfhmPay9LehhytGrVZc';         // 替换成你的 Key
+    // ------------------------------------------------
+
+    const supabaseClient = {
+        url: SUPABASE_URL,
+        key: SUPABASE_ANON_KEY,
+        async request(path, options = {}) {
+            const headers = {
+                'Content-Type': 'application/json',
+                'apikey': this.key,
+                'Authorization': `Bearer ${this.key}`,
+                ...options.headers
+            };
+            const res = await fetch(`${this.url}/rest/v1/${path}`, {
+                ...options,
+                headers
+            });
+            if (!res.ok) throw new Error(await res.text());
+            return res.json();
+        }
+    };
+
+    // 获取留言列表
+    async function loadMessages() {
+        const container = document.getElementById('messageList');
+        container.innerHTML = '<div class="loading">加载中...</div>';
+        try {
+            const data = await supabaseClient.request('messages?order=created_at.desc&limit=50');
+            if (data.length === 0) {
+                container.innerHTML = '<div style="text-align:center;color:#94a3b8;">✨ 还没有留言，抢个沙发吧～</div>';
+                return;
+            }
+            const html = data.map(msg => `
+                <div class="message-item">
+                    <div>
+                        <span class="msg-name">${escapeHtml(msg.name || '匿名')}</span>
+                        <span class="msg-time">${formatDate(msg.created_at)}</span>
+                    </div>
+                    <div class="msg-content">${escapeHtml(msg.content)}</div>
+                </div>
+            `).join('');
+            container.innerHTML = html;
+        } catch (err) {
+            console.error(err);
+            container.innerHTML = '<div style="color:#dc2626;">加载失败，请稍后重试</div>';
+        }
+    }
+
+    // 发布留言
+    async function postMessage(name, content) {
+        if (!name.trim()) throw new Error('请输入昵称');
+        if (!content.trim()) throw new Error('请输入留言内容');
+        const payload = { name: name.trim(), content: content.trim() };
+        await supabaseClient.request('messages', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+    }
+
+    // 辅助函数
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        }).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(c) {
+            return c;
+        });
+    }
+
+    function formatDate(iso) {
+        if (!iso) return '刚刚';
+        const date = new Date(iso);
+        return `${date.getMonth()+1}/${date.getDate()} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}`;
+    }
+
+    // 提交按钮事件
+    document.getElementById('submitBtn').addEventListener('click', async () => {
+        const nameInput = document.getElementById('name');
+        const contentInput = document.getElementById('content');
+        const btn = document.getElementById('submitBtn');
+        const originalText = btn.innerText;
+        btn.disabled = true;
+        btn.innerText = '发布中...';
+        try {
+            await postMessage(nameInput.value, contentInput.value);
+            nameInput.value = '';
+            contentInput.value = '';
+            await loadMessages();
+            alert('留言发布成功 ✅');
+        } catch (err) {
+            alert('发布失败：' + err.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerText = originalText;
+        }
+    });
+
+    // 页面加载时获取留言
+    loadMessages();
+</script>
+</body>
+</html>
